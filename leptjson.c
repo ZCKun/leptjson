@@ -7,9 +7,11 @@
 #include <stdlib.h>
 #include <errno.h>
 #include <math.h>
+#include <memory.h>
 #include "leptjson.h"
 
 #define EXPECT(c, ch) do { assert(*c->json == (ch)); c->json++; } while(0)
+#define lept_init(v) do { (v)->type = LEPT_NULL; } while(0)
 
 typedef struct {
     lept_value v;
@@ -22,7 +24,7 @@ lept_type lept_get_type(const lept_value *v) {
 
 double lept_get_number(const lept_value *v) {
     assert(v != NULL && v->type == LEPT_NUMBER);
-    return v->n;
+    return v->u.n;
 }
 
 /* ws = *(%x20 / %x09 / %x0A / %x0D) */
@@ -62,9 +64,9 @@ static int lept_parse_number(lept_context *c, lept_value *v) {
     }
 
     errno = 0;
-    v->n = strtod(c->json, &end);
+    v->u.n = strtod(c->json, &end);
     /* 数字过大的处理 */
-    if (errno == ERANGE && v->n == HUGE_VAL) return LEPT_PARSE_NUMBER_TOO_BIG;
+    if (errno == ERANGE && v->u.n == HUGE_VAL) return LEPT_PARSE_NUMBER_TOO_BIG;
     c->json = end;
     v->type = LEPT_NUMBER;
     return LEPT_PARSE_OK;
@@ -80,6 +82,30 @@ static int lept_parse_literal(lept_context *c, lept_value *v, const char *litera
     v->type = type;
     return LEPT_PARSE_OK;
 }
+
+void lept_free(lept_value *v) {
+    assert(v != NULL);
+    if (v->type == LEPT_STRING)
+        free(v->u.s.s);
+    v->type = LEPT_NULL;
+}
+
+void lept_set_string(lept_value *v, const char *s, size_t len) {
+    /* 非空指针（有具体的字符串）或是零长度的字符串都是合法的 */
+    assert(v != NULL && (s != NULL || len == 0 ));
+    lept_free(v);
+    v->u.s.s = (char*) malloc(len + 1);
+    /* 当设置一个值为字符串时，需要把参数中的字符串复制一份 */
+    memcpy(v->u.s.s, s, len);
+    v->u.s.s[len] = '\0';
+    v->u.s.len = len;
+    v->type = LEPT_STRING;
+}
+
+static int lept_parse_string(lept_context *c, lept_value *v) {
+
+}
+
 
 /* value = null / false / true */
 static int lept_parse_value(lept_context *c, lept_value *v) {
